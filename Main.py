@@ -1,5 +1,4 @@
 import os
-import platform
 import datetime
 import webbrowser
 import pywhatkit
@@ -8,8 +7,7 @@ import time
 import threading
 import matplotlib.pyplot as plt
 from notifypy import Notify
-from multiprocessing import Process, Pipe, Lock
-import shutil
+from multiprocessing import Pipe
 import socket
 import subprocess
 import psutil
@@ -43,7 +41,7 @@ from Database.ChatBot.ChatBot import ChatterBot
 # ========== Global Setup ==========
 speak_lock = threading.Lock()
 parent_conn, child_conn = Pipe()
-task_list = []  # Dynamic task list for scheduling
+task_list = [] # Dynamic task list for scheduling
 
 # ========== Core Functions ==========
 
@@ -51,13 +49,31 @@ def run_in_thread(func, *args):
     thread = threading.Thread(target=func, args=args)
     thread.start()
 
+
+def get_burst_time(task_name):
+    # Assign some burst time estimate for each task type
+    mapping = {
+        "open notepad": 5,
+        "open calculator": 4,
+        "open calendar": 3,
+        "open google": 3,
+        "screenshot": 1,
+        "ip address": 0.5,
+        "get battery": 1,
+        "send message": 12,
+        "read pdf": 6,
+        "notify": 3,
+        "set reminder": 5,
+    }
+    return mapping.get(task_name, 3)
+
 # ========== Round Robin Scheduler ==========
-def round_robin_scheduling(processes, burst_time, quantum):
-    n = len(processes)
-    remaining_burst = burst_time[:]
+def round_robin_scheduling(task_names, burst_times, quantum):
+    n = len(task_names)
+    remaining_burst = burst_times.copy()
     waiting_time = [0] * n
     turnaround_time = [0] * n
-    t = 0
+    time_elapsed = 0
     gantt_chart = []
 
     while True:
@@ -66,31 +82,42 @@ def round_robin_scheduling(processes, burst_time, quantum):
             if remaining_burst[i] > 0:
                 done = False
                 exec_time = min(quantum, remaining_burst[i])
-                gantt_chart.append((processes[i], t, t + exec_time))
-                t += exec_time
+                gantt_chart.append((task_names[i], time_elapsed, time_elapsed + exec_time))
+
+                # Simulate task execution
+                print(f"\nRunning task: {task_names[i]} for {exec_time} sec")
+                thread = threading.Thread(target=get_burst_time, args=(task_names[i],))
+                thread.start()
+                time.sleep(exec_time)
+
+                time_elapsed += exec_time
                 remaining_burst[i] -= exec_time
+
                 for j in range(n):
                     if j != i and remaining_burst[j] > 0:
                         waiting_time[j] += exec_time
         if done:
             break
 
+    # Turnaround time calculation
     for i in range(n):
-        turnaround_time[i] = waiting_time[i] + burst_time[i]
+        turnaround_time[i] = waiting_time[i] + burst_times[i]
 
-    print("\nProcess\tBurst\tWaiting\tTurnaround")
+    # Print task stats
+    print("\nTask\tBurst\tWaiting\tTurnaround")
     for i in range(n):
-        print(f"{processes[i]}\t{burst_time[i]}\t{waiting_time[i]}\t{turnaround_time[i]}")
+        print(f"{task_names[i]}\t{burst_times[i]}\t{waiting_time[i]}\t{turnaround_time[i]}")
 
+    # Gantt chart
     fig, ax = plt.subplots()
     ax.set_title("Round Robin Gantt Chart")
     ax.set_xlabel("Time")
-    ax.set_ylabel("Processes")
-    ax.set_yticks(range(len(processes)))
-    ax.set_yticklabels(processes)
+    ax.set_ylabel("Tasks")
+    ax.set_yticks(range(len(task_names)))
+    ax.set_yticklabels(task_names)
 
-    for i, (p, start, end) in enumerate(gantt_chart):
-        idx = processes.index(p)
+    for name, start, end in gantt_chart:
+        idx = task_names.index(name)
         ax.broken_barh([(start, end - start)], (idx - 0.4, 0.8), facecolors=('tab:blue'))
 
     plt.grid(True)
@@ -101,31 +128,41 @@ def round_robin_scheduling(processes, burst_time, quantum):
 def open_app(name):
     if name == "notepad":
         os.system("notepad")
+        task_list.append(("open notepad", get_burst_time("open notepad")))
     elif name == "calculator":
         os.system("calc")
+        task_list.append(("open calculator", get_burst_time("open calculator")))
     elif name == "calendar":
         webbrowser.open("https://calendar.google.com")
+        task_list.append(("open calendar", get_burst_time("open calendar")))
     elif name == "google":
         webbrowser.open("https://www.google.com/")
+        task_list.append(("open google", get_burst_time("open google")))
     else:
         speak("App not recognized.")
 
 
 def take_screenshot():
-    timestamp = time.strftime("%Y%m%d-%H%M%S")
-    filename = f"screenshot_{timestamp}.png"
-    pyautogui.screenshot(filename)
-    speak(f"Screenshot saved as {filename}")
+    now = datetime.datetime.now()
+    filename = f"screenshot_{now.strftime('%Y%m%d-%H%M%S')}.png"
+    screenshot = pyautogui.screenshot()
+    screenshot.save(filename)
+    print(f"Screenshot saved as {filename}")
+    
 
 def get_ip():
     hostname = socket.gethostname()
     ip = socket.gethostbyname(hostname)
     speak(f"Your IP address is {ip}")
+    task_list.append(("ip", get_burst_time("ip address")))
+
 
 def get_battery():
     battery = psutil.sensors_battery()
     percent = battery.percent
     speak(f"Battery is at {percent} percent")
+    task_list.append(("battery", get_burst_time("battery")))
+    
 
 def show_notification(title, message):
     notify = Notify()
@@ -140,6 +177,8 @@ def custom_notification(msg):
         
         if message:
             show_notification("Jarvis Notification", message)
+            task_list.append(("notify", get_burst_time("notify")))
+            
             speak(f"Notification sent: {message}")
         else:
             speak("Please provide a message after 'notify'.")
@@ -162,23 +201,42 @@ def main():
                 parts = query.split()
                 name = parts[2]
                 burst = int(parts[4])
-                task_list.append((name, burst))
-                speak(f"Task {name} with burst time {burst} added to the scheduler.")
+                task_funcs = {
+                    "notepad": lambda: open_app("notepad"),
+                    "screenshot": take_screenshot,
+                    "pdf": lambda: read_pdf("sample.pdf"),
+                    # Add more mappings as needed
+                }
+                
+                if name in task_funcs:
+                    task_list.append({
+                        "name": name,
+                        "burst": burst,
+                        "func": task_funcs[name]
+                    })
+                    speak(f"Task {name} added with burst time {burst}.")
+                else:
+                    speak(f"Task {name} not recognized.")
             except:
                 speak("Invalid format. Use: add task Task1 burst 5")
 
-        elif "run scheduler quantum" in query:
+        elif query.startswith("run"):
+            parts = query.split()
+            if len(parts) < 2:
+                speak("Please specify quantum value. Usage: run <quantum>")
+                continue
             try:
-                parts = query.split()
-                quantum = int(parts[-1])
+                quantum = int(parts[1])
                 if task_list:
                     processes, bursts = zip(*task_list)
                     round_robin_scheduling(list(processes), list(bursts), quantum)
                     speak("Scheduling completed.")
+                    # task_list.clear()  # optional
                 else:
-                    speak("No tasks to schedule. Please add tasks first.")
-            except:
-                speak("Invalid format. Use: run scheduler quantum 2")
+                    speak("No tasks added to schedule.")
+            except ValueError:
+                speak("Quantum must be a number. Usage: run <quantum>")
+
 
         # ---------- Productivity ----------
         elif "open" in query:
@@ -223,6 +281,7 @@ def main():
 
         # ---------- Multimedia ----------
         elif "screenshot" in query:
+            task_list.append(("screenshot", get_burst_time("screenshot")))    
             run_in_thread(take_screenshot)
 
         # ---------- System Utilities ----------
@@ -254,12 +313,14 @@ def main():
                 
         elif "send whatsapp message" in query or "send message" in query or "whatsapp" in query:
             whatsapp_chat_input()
-
+            task_list.append(("message", get_burst_time("send message")))
 
         elif "read pdf" in query:
             speak("Enter PDF file path:")
             path = input("PDF Path: ")
             run_in_thread(read_pdf, path)
+            task_list.append(("read pdf", get_burst_time("read pdf")))
+            
 
         elif "move file" in query:
             speak("Enter source file path:")
