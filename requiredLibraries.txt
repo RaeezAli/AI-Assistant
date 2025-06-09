@@ -7,8 +7,8 @@ wolframalpha
 pyperclip
 pytube
 matplotlib
-notifypy
+notify_py
 psutil
 pypdf2  
 
-pip install pyttsx3 SpeechRecognition pywhatkit wikipedia pyautogui wolframalpha pyperclip pytube matplotlib notifypy psutil PyPDF2
+pip install -r requiredLibraries.txt
