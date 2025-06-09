@@ -1,0 +1,13 @@
+pyttsx3
+SpeechRecognition==3.14.3
+audioop-lts; python_version >= "3.13"
+pywhatkit
+pywikihow
+GoogleImageScraper
+standard-imghdr
+playsound==1.2.2
+wolframalpha
+win10toast
+PyAudio
+keyboard
+plyer
