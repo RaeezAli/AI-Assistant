@@ -32,14 +32,22 @@ def read_pdf(path):
         with open(path, 'rb') as file:
             reader = PyPDF2.PdfReader(file)
             text = ''
-            for page in reader.pages:
-                text += page.extract_text()
-            speak("Reading PDF content.")
-            print(text)
-            speak(text[:500])  # Speak first 500 chars
+            print(f"Total Pages: {len(reader.pages)}")
+            for i, page in enumerate(reader.pages):
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text
+                else:
+                    print(f"Page {i+1} has no extractable text.")
+            if text:
+                speak("Reading PDF content.")
+                print(text)
+                speak(text[:500])  # Speak first 500 chars
+            else:
+                speak("No text found in PDF.")
     except Exception as e:
         speak("Unable to read PDF.")
-        print(e)
+        print(f"Error: {e}")
 
 # 6. Clean Downloads Folder
 def clean_downloads(download_path, keep_extensions=None):

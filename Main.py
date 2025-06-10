@@ -359,6 +359,15 @@ def main():
         elif "memory" in query or "allocation" in query or "memory allocation" in query:
             blocks = [100, 500, 200, 300, 600]
             processes = [212, 417, 112, 426]
+            
+            print("Memory Blocks:")
+            for i, block in enumerate(blocks):
+                print(f"Block {i + 1}: {block} KB")
+
+            print("\nProcesses:")
+            for i, process in enumerate(processes):
+                print(f"Process {i + 1}: {process} KB")
+
 
             # First Fit Allocation
             ff_result = first_fit(blocks.copy(), processes)
